@@ -73,7 +73,7 @@
 				let [name, ...mods] = a.name.slice(3).split("."),
 				has = m=>mods.includes(m), h = has("halt"), debounce = mkDb()
 				if (has("cc")) name = name.replace(/-([a-z])/g, (_,c)=>c.toUpperCase())
-				let target = has("outside") ? doc : elt,
+				let target = has("outside") || has("anywhere") ? doc : elt,
 				opts = {capture: has("capture"), passive: has("passive")},
 				fn = new AF("event", ...HARGS, `with(event?.detail||{}){${a.value}}`),
 				handler = elt.__moxi[name] = evt=>{
