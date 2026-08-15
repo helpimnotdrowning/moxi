@@ -78,9 +78,11 @@
             border: 3px solid red;
         }
         .passed-info {
+            font-size: 48px;
             color: green;
         }
         .failed-info {
+            font-size: 48px;
             color: red;
         }
         pre {
@@ -192,7 +194,7 @@
                 test(async () => {
                     window.__t6 = 0;
                     find('#host6').innerHTML = `<button on-click="window.__t6++">go</button>`;
-                    await sleep(30);
+                    await sleep(100);
                     find('#host6 button').click();
                     assertEq(window.__t6, 1);
                 })
@@ -317,7 +319,7 @@
                     let handler = (e) => { if (e.target.matches("[mx-cancel]")) e.preventDefault() };
                     document.addEventListener("mx:init", handler);
                     currentTest.testElt.insertAdjacentHTML('beforeend', `<button mx-cancel on-click="window.__t7++">go</button>`);
-                    await sleep(30);
+                    await sleep(100);
                     find('[mx-cancel]').click();
                     document.removeEventListener("mx:init", handler);
                     assertEq(window.__t7, 0);
@@ -333,7 +335,7 @@
                     let handler = (e) => { if (e.target.matches("[data-inited]")) fired = true };
                     document.addEventListener("mx:inited", handler, true);
                     currentTest.testElt.insertAdjacentHTML('beforeend', `<button data-inited on-click="">go</button>`);
-                    await sleep(30);
+                    await sleep(100);
                     document.removeEventListener("mx:inited", handler, true);
                     assertEq(fired, true);
                 })
@@ -639,7 +641,7 @@
                     let btn = find('button');
                     btn.click();
                     btn.dispatchEvent(new CustomEvent("pong", {detail: "ok"}));
-                    await sleep(30);
+                    await sleep(100);
                     assertEq(window.__w2, "ok");
                 })
             </script>
@@ -726,7 +728,7 @@
                 test(async () => {
                     window.__tx = false;
                     find('button').click();
-                    await sleep(30);
+                    await sleep(100);
                     assertEq(window.__tx, true);
                 })
             </script>
@@ -904,7 +906,7 @@
             <h3>live evaluates once at bind time</h3>
             <script>
                 test(async () => {
-                    await sleep(30);
+                    await sleep(100);
                     assertEq(find('#lo1').innerText, "hi");
                 })
             </script>
@@ -919,7 +921,7 @@
                     let input = find('#ln2');
                     input.value = "typed";
                     input.dispatchEvent(new Event("input", {bubbles: true}));
-                    await sleep(30);
+                    await sleep(100);
                     assertEq(find('#lo2').innerText, "typed");
                 })
             </script>
@@ -932,7 +934,7 @@
             <script>
                 test(async () => {
                     find('#ll3').innerHTML = "<li>a</li><li>b</li><li>c</li>";
-                    await sleep(30);
+                    await sleep(100);
                     assertEq(find('#lo3').innerText, "3");
                 })
             </script>
@@ -945,7 +947,7 @@
             <script>
                 test(async () => {
                     find('#ls4').dataset.x = "two";
-                    await sleep(30);
+                    await sleep(100);
                     assertEq(find('#lo4').innerText, "two");
                 })
             </script>
