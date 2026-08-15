@@ -1,8 +1,10 @@
 (() => {
 	if (document.__moxi_mo)
 		return;
+	
 	let liveFunctions = new Set();
 	let pending = false;
+	
 	function recompute() {
 		if (pending)
 			return;
@@ -12,26 +14,49 @@
 			setTimeout(() => pending = false);
 		});
 	}
+	
 	document.__moxi_mo = new MutationObserver(recs => {
-		recs.forEach(r =>
-			r.type === "childList" && r.addedNodes.forEach(n => process(n))
-		);
+		recs.forEach(r => {
+			if (r.type === "childList")
+				r.addedNodes.forEach(n => process(n));
+		});
 		recompute();
 	});
+
 	let AF = async function(){}.constructor;
 	let HARGS = ["q", "wait", "trigger", "debounce"];
-	function fire(elt, type, detail, bub) {
+	
+	/**
+	 * @param {HTMLElement} elt
+	 * @param {string} type
+	 * @param {CustomEventInit} detail
+	 * @param {boolean?} bubbles
+	 */
+	function fire(elt, type, detail, bubbles) {
 		return elt.dispatchEvent(new CustomEvent(type, {
 			detail,
-			bubbles: bub ?? true,
+			bubbles: bubbles ?? true,
 			cancelable: true,
 			composed: true,
 		}));
 	}
+	
+	/**
+	 * @param {Node} elt
+	 * @param {string} name
+	 * @param {EventListenerOrEventListenerObject|null} handler
+	 * @param {(AddEventListenerOptions|boolean)?} options
+	 * @return {*}
+	 */
 	function el(elt, name, handler, options) {
 		return elt.addEventListener(name, handler, options)
 	}
+
 	let _sym = Symbol();
+
+	/**
+	 * @return {function(number): Promise<unknown>}
+	 */
 	function mkSym() {
 		let last = 0;
 		let j;
@@ -48,6 +73,11 @@
 			}, ms);
 		});
 	}
+
+	/**
+	 * @param {HTMLElement} ctx
+	 * @return {function(number|string): Promise<unknown>}
+	 */
 	function mkWait(ctx) {
 		return x => new Promise(
 			res => typeof x === "number"
@@ -55,18 +85,34 @@
 				: el(ctx, x, res, {once: true})
 		);
 	}
+
+	/**
+	 * @param {HTMLElement} elt
+	 * @return {Element|null}
+	 */
 	function ignore(elt) {
 		return elt.closest("[mx-ignore]");
 	}
+
+	/**
+	 * @param {any} x
+	 * @return {[x]|[]}
+	 */
 	function one(x) {
 		return x ? [x] : [];
 	}
+	
 	let POS = {
 		before: "beforebegin",
 		after: "afterend",
 		start: "afterbegin",
 		end: "beforeend",
 	};
+	
+	/**
+	 * @param {HTMLElement[]} elts
+	 * @return {{}}
+	 */
 	function proxy(elts) {
 		return new Proxy({}, {
 			get: (_, p) => {
@@ -103,6 +149,11 @@
 			}
 		});
 	}
+
+	/**
+	 * @param {HTMLElement?} ctx
+	 * @return {(function(string|HTMLElement): (HTMLElement[]))}
+	 */
 	function mkQuery(ctx) {
 		return sel => {
 			if (typeof sel !== "string")
@@ -149,14 +200,16 @@
 			return proxy(elts);
 		};
 	}
+
+	/**
+	 * @param {HTMLElement & { __moxi:{} }} elt
+	 */
 	function init(elt) {
 		if (elt.__moxi || ignore(elt))
 			return;
 		if (!fire(elt, "mx:init", {}))
 			return;
 		elt.__moxi = {};
-		let q = mkQuery(elt);
-		let wait = mkWait(elt);
 		let trigger = fire.bind(0, elt);
 		let liveRuns = [];
 		for (let a of elt.attributes) {
@@ -164,17 +217,24 @@
 				let fn = new AF(...HARGS, a.value);
 				let debounce = mkSym();
 				let run = () => elt.isConnected
-					? fn.call(elt, q, wait, trigger, debounce)
+					? fn.call(elt, mkQuery(elt), mkWait(elt), trigger, debounce)
 					: liveFunctions.delete(run);
 				liveFunctions.add(run);
 				liveRuns.push(run);
 			} else if (a.name.startsWith("on-")) {
+				// TODO multi events with on-ev1.mod+ev2.mod
 				let [ name, ...mods ] = a.name.slice(3).split(".");
-				function has(m) {
-					return mods.includes(m);
+				
+				/**
+				 * @param {("prevent"|"stop"|"halt"|"once"|"self"|"capture"|"passive"|"outside"|"anywhere"|"cc")} modifier
+				 * @return {boolean}
+				 */
+				function has(modifier) {
+					return mods.includes(modifier);
 				}
-				let h = has("halt");
+
 				let debounce = mkSym();
+				
 				if (has("cc"))
 					name = name.replace( /-([a-z])/g, (_, c) => c.toUpperCase() );
 				let target = has("outside") || has("anywhere") ? document : elt;
@@ -183,16 +243,21 @@
 					passive: has("passive")
 				};
 				let fn = new AF("event", ...HARGS, `with(event?.detail||{}){${a.value}}`);
-				function handler(evt) {
-					if (evt && (has("self") && evt.target !== elt || has("outside") && elt.contains(evt.target)))
+
+				/**
+				 * @param {Event?} ev
+				 * @return {Promise<any>|void}
+				 */
+				function handler(ev) {
+					if (ev && (has("self") && ev.target !== elt || has("outside") && elt.contains(ev.target)))
 						return;
-					if (h || has("prevent"))
-						evt?.preventDefault();
-					if (h || has("stop"))
-						evt?.stopPropagation();
+					if (has("halt") || has("prevent"))
+						ev?.preventDefault();
+					if (has("halt") || has("stop"))
+						ev?.stopPropagation();
 					if (has("once"))
 						target.removeEventListener(name, handler, opts);
-					return fn.call(elt, evt, q, wait, trigger, debounce).catch(e => {
+					return fn.call(elt, ev, mkQuery(elt), mkWait(elt), trigger, debounce).catch(e => {
 						if (e !== _sym) {
 							console.error(elt); // nhnd
 							throw e;
@@ -210,6 +275,10 @@
 		liveRuns.forEach(r => r());
 		fire(elt, "mx:inited", {}, false);
 	}
+
+	/**
+	 * @param {HTMLElement} n
+	 */
 	function process(n) {
 		if (n.nodeType !== 1 || ignore(n))
 			return;
@@ -217,18 +286,16 @@
 		for (let i = 0; i < r.snapshotLength; i++)
 			init(r.snapshotItem(i));
 	}
-	let gt = globalThis;
-	let de = document.documentElement;
-	gt.q = mkQuery(de);
-	gt.wait = mkWait(de);
-	gt.transition = fn => document.startViewTransition
+	globalThis.q = mkQuery(document.documentElement);
+	globalThis.wait = mkWait(document.documentElement);
+	globalThis.transition = fn => document.startViewTransition
 		? document.startViewTransition(fn)
 		: fn();
 
-	el(document, "mx:process", evt => process(evt.target));
+	el(document, "mx:process", ev => process(ev.target));
 	el(document, "refresh", recompute);
 	el(document, "DOMContentLoaded", () => {
-		document.__moxi_mo.observe(de, { childList: true, subtree: true, attributes: true, characterData: true });
+		document.__moxi_mo.observe(document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
 		el(document, "input", recompute, true);
 		el(document, "change", recompute, true);
 		process(document.body);
