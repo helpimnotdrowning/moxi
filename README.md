@@ -65,9 +65,9 @@ Finally, moxi is available on NPM as the [
 
 | attribute    | description                                                                                                                                        | example                                    |
 |--------------|----------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------|
-| `on-<event>` | Binds a handler for `<event>` on this element. Colons are allowed in the event name (e.g. `on-fx:after`).                                          | `on-click="q('#out').innerText = 'hi'"`    |
+| `on-<event>` | Binds a handler for `<event>` on this element. Colons are allowed in the event name (e.g. `on-fx:after`).                                          | `on-click="$('#out').innerText('hi')"`     |
 | `on-init`    | Special case - runs once at bind time rather than registering an event listener. Useful for setup code that lives on the element itself.           | `on-init="this.dataset.ready = true"`      |
-| `live`       | An expression that is evaluated at bind time and re-evaluated whenever the DOM or form state changes. Great for reactive output.                   | `live="this.innerText = q('#name').value"` |
+| `live`       | An expression that is evaluated at bind time and re-evaluated whenever the DOM or form state changes. Great for reactive output.                   | `live="this.innerText = $('#name').val()"` |
 | `mx-ignore`  | Any element with this attribute on it or on an ancestor will be skipped during processing - no `on-*` or `live` attributes on it will be wired up. |                                            |
 
 ### Event Modifiers
@@ -91,26 +91,22 @@ before the body runs.
 
 ### Scope
 
-moxi exposes three helpers on `globalThis`:
+moxi exposes two helpers on `globalThis`:
 
-| name             | type          | description                                                                                                                             |
-|------------------|---------------|-----------------------------------------------------------------------------------------------------------------------------------------|
-| `q(x)`           | fn -> proxy   | Query helper. `x` can be a selector string, a single element, or any iterable of elements. See [The `q()` Helper](#the-q-helper) below. |
-| `wait(x)`        | fn -> Promise | If `x` is a number, resolves after `x` milliseconds. If it's a string, resolves with the event the next time an event named `x` fires.  |
-| `transition(fn)` | fn            | Wraps `fn` in `document.startViewTransition()`, with a fallback if unsupported.                                                         |
+| name             | type          | description                                                                                                                            |
+|------------------|---------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| ~~`q(x)`~~       |               | Removed; use jQuery's `$`                                                                                                              |
+| `wait(x)`        | fn -> Promise | If `x` is a number, resolves after `x` milliseconds. If it's a string, resolves with the event the next time an event named `x` fires. |
+| `transition(fn)` | fn            | Wraps `fn` in `document.startViewTransition()`, with a fallback if unsupported.                                                        |
 
-Inside `on-*` and `live` bodies, four additional bindings are in scope:
+Inside `on-*` and `live` bodies, three additional bindings are in scope:
 
-| name                             | type          | description                                                                                                                                              |
-|----------------------------------|---------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `this`                           | `Element`     | The element the attribute is on.                                                                                                                         |
-| `event`                          | `Event`       | Available in `on-*` handlers; undefined for `on-init` and `live`.                                                                                        |
-| `trigger(type, detail, bubbles)` | fn            | Dispatches a cancelable `CustomEvent` from `this`. `bubbles` defaults to `true`. From outside a handler, use `q(elt).trigger(...)` on the proxy instead. |
-| `debounce(ms)`                   | fn -> Promise | Per-handler debouncer - superseded calls never resolve. Use with `await`. Handler-scope only because it carries per-handler state.                       |
-
-`q()` directionals (`next`, `prev`, `closest`, `in this`) and `wait("event")` are
-context-aware: in a handler they resolve relative to `this`; called globally they
-resolve relative to `document.documentElement`.
+| name                                 | type          | description                                                                                                                        |
+|--------------------------------------|---------------|------------------------------------------------------------------------------------------------------------------------------------|
+| `this`                               | `Element`     | The element the attribute is on.                                                                                                   |
+| `event`                              | `Event`       | Available in `on-*` handlers; undefined for `on-init` and `live`.                                                                  |
+| ~~`trigger(type, detail, bubbles)`~~ |               | Removed; use jQuery.nhnd's `dispatchEvent`                                                                                         |
+| `debounce(ms)`                       | fn -> Promise | Per-handler debouncer - superseded calls never resolve. Use with `await`. Handler-scope only because it carries per-handler state. |
 
 Handler bodies are compiled as **async functions** (via the `AsyncFunction` constructor), so
 `await` works anywhere.
@@ -140,54 +136,9 @@ around the handler body, so:
 * If `event.detail` is missing or null (e.g., a plain non-`CustomEvent`), nothing
   is injected and the handler still runs.
 * Names that aren't on `event.detail` resolve normally to `this`, `event`, `trigger`,
-  `debounce`, the global helpers (`q`, `wait`, `transition`), or any other binding.
+  `debounce`, the global helpers (`wait`, `transition`), or any other binding.
 * Assignments to a name that *isn't* already a property of `event.detail` fall
   through to the outer scope, so they don't accidentally pollute `detail`.
-
-### The `q()` Helper
-
-`q(x)` returns a proxy over matched elements. `x` is most often a selector string, but
-can also be a single `Element` (wrapped) or any iterable of elements (e.g. a `NodeList`
-or `Array`). When given a string, the grammar is:
-
-```
-[<direction> ]<css-selector>[ in (this | <scope-selector>)]
-```
-
-#### Directions
-
-| direction   | result                                                                       |
-|-------------|------------------------------------------------------------------------------|
-| _(none)_    | All elements matching the selector in the scope (default scope: `document`). |
-| `next X`    | The first `X` after `this` in document order.                                |
-| `prev X`    | The last `X` before `this` in document order.                                |
-| `closest X` | The same as `this.closest(X)`.                                               |
-| `first X`   | The first `X` in the scope.                                                  |
-| `last X`    | The last `X` in the scope.                                                   |
-
-#### Scoping with `in`
-
-* `q('.row in this')` - scopes the query to `this`
-* `q('.row in #panel')` - scopes the query to the element matching `#panel`
-* If the scope selector matches nothing, `q` returns an empty proxy (no throw).
-
-#### The Proxy
-
-The object returned by `q()` is a `Proxy` that fans reads, writes, and method calls across
-every matched element:
-
-| operation                               | behavior                                                                                                                                                                                |
-|-----------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `q(...).prop = v`                       | Sets `prop = v` on every match.                                                                                                                                                         |
-| `q(...).method(...)`                    | Calls `method` on every match. Returns the result from the first match - so value-returning methods like `checkValidity()` or `getAttribute()` work naturally.                          |
-| `q(...).prop` (object)                  | Returns a new proxy over `[e1.prop, e2.prop, ...]`, so nested access like `q('.row').classList.add('sel')` and `q('.row').style.color = 'red'` works.                                   |
-| `q(...).prop` (primitive or function)   | Returns the value from the first match.                                                                                                                                                 |
-| `q(...).count`                          | Returns the number of matched elements.                                                                                                                                                 |
-| `q(...).arr()`                          | Returns the matched elements as a plain `Array`, so you can chain `.filter()`, `.map()`, etc. without spreading.                                                                        |
-| `q(...).trigger(type, detail, bubbles)` | Dispatches the event from every matched element. `bubbles` defaults to `true`.                                                                                                          |
-| `q(...).take(cls, from)`                | Removes `cls` from every element matching `from` (a selector string or iterable of elements), then adds it to every matched element. Perfect for active-tab / active-nav patterns.      |
-| `q(...).insert(pos, html)`              | Parses `html` and inserts it at every matched element. `pos` is one of `'before'` / `'start'` / `'end'` / `'after'` - a friendlier spelling of the four `insertAdjacentHTML` positions. |
-| `for (let e of q(...))` / `[...q(...)]` | Iterates over the raw matched elements.                                                                                                                                                 |
 
 ### Events
 

@@ -93,21 +93,6 @@
 	function ignore(elt) {
 		return elt.closest("[mx-ignore]");
 	}
-
-	/**
-	 * @param {any} x
-	 * @return {[x]|[]}
-	 */
-	function one(x) {
-		return x ? [x] : [];
-	}
-	
-	let POS = {
-		before: "beforebegin",
-		after: "afterend",
-		start: "afterbegin",
-		end: "beforeend",
-	};
 	
 	/**
 	 * @param {HTMLElement[]} elts
@@ -116,25 +101,6 @@
 	function proxy(elts) {
 		return new Proxy({}, {
 			get: (_, p) => {
-				// don't turn this into a switch, the p==="arr" case causes #test58 to fail sometimes 
-				if (p === "count")
-					return elts.length;
-				if (p === "arr")
-					return () => elts.slice();
-				if (p === Symbol.iterator)
-					return () => elts.values();
-				if (p === "trigger")
-					return (t, d, b) => elts.forEach(e => fire(e, t, d, b));
-				if (p === "insert")
-					return (pos, s) => elts.forEach(e => e.insertAdjacentHTML(POS[pos], s));
-				if (p === "take")
-					return (cls, from) => {
-						for (let e of typeof from === "string" ? document.querySelectorAll(from) : from)
-							e.classList.remove(cls);
-						for (let e of elts)
-							e.classList.add(cls);
-					};
-
 				let v = elts[0]?.[p];
 				if (v?.call)
 					return (...a) => elts.map(e => e[p](...a))[0];
@@ -161,42 +127,8 @@
 					? [ sel ]
 					: [ ...sel ]
 				);
-			let im = sel.match(/^(.+)\s+in\s+(.+)$/);
-			let root = document;
-			if (im) {
-				sel = im[1];
-				root = im[2] === "this"
-					? ctx
-					: document.querySelector(im[2]);
-			}
-			if (!root)
-				return proxy([]);
-			let m = sel.match(/^(next|prev|closest|first|last)\s+(.+)$/), elts;
-			if (m) {
-				let [ , d, s ] = m;
-				if (d === "closest") {
-					elts = one(ctx.closest(s));
-				} else {
-					let all = [ ...root.querySelectorAll(s) ];
-					switch (d) {
-						case "first":
-							elts = all.slice(0, 1);
-							break;
-						case "last":
-							elts = all.slice(-1);
-							break;
-						case "next":
-							elts = one(all.find(e => ctx.compareDocumentPosition(e) & 4));
-							break;
-						default:
-							elts = one(all.reverse().find(e => ctx.compareDocumentPosition(e) & 2));
-							break;
-					}
-				}
-			} else {
-				elts = [ ...root.querySelectorAll(sel) ];
-			}
 
+			let elts = [ ...document.querySelectorAll(sel) ];
 			return proxy(elts);
 		};
 	}
@@ -223,53 +155,62 @@
 				liveRuns.push(run);
 			} else if (a.name.startsWith("on-")) {
 				// TODO multi events with on-ev1.mod+ev2.mod
-				let [ name, ...mods ] = a.name.slice(3).split(".");
 				
-				/**
-				 * @param {("prevent"|"stop"|"halt"|"once"|"self"|"capture"|"passive"|"outside"|"anywhere"|"cc")} modifier
-				 * @return {boolean}
-				 */
-				function has(modifier) {
-					return mods.includes(modifier);
-				}
+				// strip "^on-"
+				let label = a.name.slice(3);
 
-				let debounce = mkSym();
+				// multiple events for a single handler with "on-ev1+ev2+..."
+				let events = label.includes("+")
+					? label.split("+")
+					: [ label ];
 				
-				if (has("cc"))
-					name = name.replace( /-([a-z])/g, (_, c) => c.toUpperCase() );
-				let target = has("outside") || has("anywhere") ? document : elt;
-				let opts = {
-					capture: has("capture"),
-					passive: has("passive")
-				};
-				let fn = new AF("event", ...HARGS, `with(event?.detail||{}){${a.value}}`);
+				events.forEach(eventName => {
+					let [ name, ...mods ] = eventName.split(".");
 
-				/**
-				 * @param {Event?} ev
-				 * @return {Promise<any>|void}
-				 */
-				function handler(ev) {
-					if (ev && (has("self") && ev.target !== elt || has("outside") && elt.contains(ev.target)))
-						return;
-					if (has("halt") || has("prevent"))
-						ev?.preventDefault();
-					if (has("halt") || has("stop"))
-						ev?.stopPropagation();
-					if (has("once"))
-						target.removeEventListener(name, handler, opts);
-					return fn.call(elt, ev, mkQuery(elt), mkWait(elt), trigger, debounce).catch(e => {
-						if (e !== _sym) {
-							console.error(elt); // nhnd
-							throw e;
-						}
-					});
-				}
-				elt.__moxi[name] = handler;
-				
-				if (name === "init")
-					handler();
-				else
-					el(target, name, handler, opts);
+					/**
+					 * @param {("prevent"|"stop"|"halt"|"once"|"self"|"capture"|"passive"|"outside"|"anywhere"|"cc")} modifier
+					 * @return {boolean}
+					 */
+					function has(modifier) {
+						return mods.includes(modifier);
+					}
+
+					let debounce = mkSym();
+					
+					if (has("cc"))
+						name = name.replace( /-([a-z])/g, (_, c) => c.toUpperCase() );
+					let target = has("outside") || has("anywhere") ? document : elt;
+					let opts = {
+						capture: has("capture"),
+						passive: has("passive"),
+						once: has("once"),
+					};
+					let fn = new AF("event", ...HARGS, `with(event?.detail||{}){${a.value}}`);
+
+					/**
+					 * @param {Event?} ev
+					 * @return {Promise<any>|void}
+					 */
+					function handler(ev) {
+						if (ev && (has("self") && ev.target !== elt || has("outside") && elt.contains(ev.target)))
+							return;
+						if (ev && (has("halt") || has("prevent")))
+							ev.preventDefault();
+						if (ev && (has("halt") || has("stop")))
+							ev.stopPropagation();
+
+						return fn.call(elt, ev, mkQuery(elt), mkWait(elt), trigger, debounce).catch(e => {
+							if (e !== _sym)
+								throw e;
+						});
+					}
+					elt.__moxi[name] = handler;
+
+					if (name === "init")
+						handler();
+					else
+						el(target, name, handler, opts);
+				});
 			}
 		}
 		liveRuns.forEach(r => r());
@@ -286,7 +227,7 @@
 		for (let i = 0; i < r.snapshotLength; i++)
 			init(r.snapshotItem(i));
 	}
-	globalThis.q = mkQuery(document.documentElement);
+	
 	globalThis.wait = mkWait(document.documentElement);
 	globalThis.transition = fn => document.startViewTransition
 		? document.startViewTransition(fn)
