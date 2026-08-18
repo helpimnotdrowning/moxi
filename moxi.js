@@ -25,7 +25,22 @@
 
 	let AF = async function(){}.constructor;
 	let HARGS = ["q", "wait", "trigger", "debounce"];
-	
+
+	/**
+	 *
+	 * @param {Error} ex
+	 * @param {HTMLElement} elt
+	 * @param {String} attrName
+	 * @param {String} attrValue
+	 *
+	 */
+	function oops(ex, elt, attrName, attrValue) {
+		console.error(`[moxi] uh oh! ${ex.name}: ${ex.message}`)
+		console.error(`[moxi] bad attribute value ${attrName}="${attrValue}"`)
+		console.error("[moxi]", elt);
+		throw ex;
+	}
+
 	/**
 	 * @param {HTMLElement} elt
 	 * @param {string} type
@@ -146,7 +161,13 @@
 		let liveRuns = [];
 		for (let a of elt.attributes) {
 			if (a.name === "live") {
-				let fn = new AF(...HARGS, a.value);
+				let fn;
+				try {
+					fn = new AF(...HARGS, a.value);
+				} catch (e) {
+					oops(e, elt, a.name, a.value);
+				}
+
 				let debounce = mkSym();
 				let run = () => elt.isConnected
 					? fn.call(elt, mkQuery(elt), mkWait(elt), trigger, debounce)
@@ -185,7 +206,13 @@
 						passive: has("passive"),
 						once: has("once"),
 					};
-					let fn = new AF("event", ...HARGS, `with(event?.detail||{}){${a.value}}`);
+
+					let fn;
+					try {
+						fn = new AF("event", ...HARGS, `with(event?.detail||{}){${a.value}}`);
+					} catch (e) {
+						oops(e, elt, a.name, a.value);
+					}
 
 					/**
 					 * @param {Event?} ev
